@@ -1,0 +1,626 @@
+{
+  "evaluated_at": "2026-11-12T07:45:20.673069+00:00",
+  "metrics": {
+    "n": 100,
+    "submitted": 3,
+    "missing": 97,
+    "correct": 1,
+    "accuracy": 0.01,
+    "invalid": 97,
+    "model_errors": 0,
+    "length_finishes": 0,
+    "calls": 6,
+    "budget_limit": 15,
+    "usage": {
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "total_tokens": 0
+    },
+    "external_calls": 0,
+    "mock": true,
+    "wall_seconds": 0.086,
+    "labels_sha256": "58f0bfaac7b650b62966875b292418d1df2401d7eaace564d1bd72ba92f12969",
+    "details": [
+      {
+        "id": "P001",
+        "prediction": "A",
+        "answer": "A",
+        "correct": true
+      },
+      {
+        "id": "P002",
+        "prediction": "A",
+        "answer": "B",
+        "correct": false
+      },
+      {
+        "id": "P003",
+        "prediction": "A",
+        "answer": "B",
+        "correct": false
+      },
+      {
+        "id": "P004",
+        "prediction": null,
+        "answer": "A",
+        "correct": false
+      },
+      {
+        "id": "P005",
+        "prediction": null,
+        "answer": "B",
+        "correct": false
+      },
+      {
+        "id": "P006",
+        "prediction": null,
+        "answer": "A",
+        "correct": false
+      },
+      {
+        "id": "P007",
+        "prediction": null,
+        "answer": "B",
+        "correct": false
+      },
+      {
+        "id": "P008",
+        "prediction": null,
+        "answer": "A",
+        "correct": false
+      },
+      {
+        "id": "P009",
+        "prediction": null,
+        "answer": "A",
+        "correct": false
+      },
+      {
+        "id": "P010",
+        "prediction": null,
+        "answer": "A",
+        "correct": false
+      },
+      {
+        "id": "P011",
+        "prediction": null,
+        "answer": "A",
+        "correct": false
+      },
+      {
+        "id": "P012",
+        "prediction": null,
+        "answer": "A",
+        "correct": false
+      },
+      {
+        "id": "P013",
+        "prediction": null,
+        "answer": "A",
+        "correct": false
+      },
+      {
+        "id": "P014",
+        "prediction": null,
+        "answer": "A",
+        "correct": false
+      },
+      {
+        "id": "P015",
+        "prediction": null,
+        "answer": "B",
+        "correct": false
+      },
+      {
+        "id": "P016",
+        "prediction": null,
+        "answer": "B",
+        "correct": false
+      },
+      {
+        "id": "P017",
+        "prediction": null,
+        "answer": "A",
+        "correct": false
+      },
+      {
+        "id": "P018",
+        "prediction": null,
+        "answer": "A",
+        "correct": false
+      },
+      {
+        "id": "P019",
+        "prediction": null,
+        "answer": "A",
+        "correct": false
+      },
+      {
+        "id": "P020",
+        "prediction": null,
+        "answer": "B",
+        "correct": false
+      },
+      {
+        "id": "P021",
+        "prediction": null,
+        "answer": "A",
+        "correct": false
+      },
+      {
+        "id": "P022",
+        "prediction": null,
+        "answer": "A",
+        "correct": false
+      },
+      {
+        "id": "P023",
+        "prediction": null,
+        "answer": "B",
+        "correct": false
+      },
+      {
+        "id": "P024",
+        "prediction": null,
+        "answer": "B",
+        "correct": false
+      },
+      {
+        "id": "P025",
+        "prediction": null,
+        "answer": "A",
+        "correct": false
+      },
+      {
+        "id": "P026",
+        "prediction": null,
+        "answer": "B",
+        "correct": false
+      },
+      {
+        "id": "P027",
+        "prediction": null,
+        "answer": "A",
+        "correct": false
+      },
+      {
+        "id": "P028",
+        "prediction": null,
+        "answer": "B",
+        "correct": false
+      },
+      {
+        "id": "P029",
+        "prediction": null,
+        "answer": "A",
+        "correct": false
+      },
+      {
+        "id": "P030",
+        "prediction": null,
+        "answer": "B",
+        "correct": false
+      },
+      {
+        "id": "P031",
+        "prediction": null,
+        "answer": "A",
+        "correct": false
+      },
+      {
+        "id": "P032",
+        "prediction": null,
+        "answer": "A",
+        "correct": false
+      },
+      {
+        "id": "P033",
+        "prediction": null,
+        "answer": "B",
+        "correct": false
+      },
+      {
+        "id": "P034",
+        "prediction": null,
+        "answer": "A",
+        "correct": false
+      },
+      {
+        "id": "P035",
+        "prediction": null,
+        "answer": "A",
+        "correct": false
+      },
+      {
+        "id": "P036",
+        "prediction": null,
+        "answer": "B",
+        "correct": false
+      },
+      {
+        "id": "P037",
+        "prediction": null,
+        "answer": "B",
+        "correct": false
+      },
+      {
+        "id": "P038",
+        "prediction": null,
+        "answer": "B",
+        "correct": false
+      },
+      {
+        "id": "P039",
+        "prediction": null,
+        "answer": "B",
+        "correct": false
+      },
+      {
+        "id": "P040",
+        "prediction": null,
+        "answer": "B",
+        "correct": false
+      },
+      {
+        "id": "P041",
+        "prediction": null,
+        "answer": "B",
+        "correct": false
+      },
+      {
+        "id": "P042",
+        "prediction": null,
+        "answer": "A",
+        "correct": false
+      },
+      {
+        "id": "P043",
+        "prediction": null,
+        "answer": "B",
+        "correct": false
+      },
+      {
+        "id": "P044",
+        "prediction": null,
+        "answer": "B",
+        "correct": false
+      },
+      {
+        "id": "P045",
+        "prediction": null,
+        "answer": "A",
+        "correct": false
+      },
+      {
+        "id": "P046",
+        "prediction": null,
+        "answer": "A",
+        "correct": false
+      },
+      {
+        "id": "P047",
+        "prediction": null,
+        "answer": "A",
+        "correct": false
+      },
+      {
+        "id": "P048",
+        "prediction": null,
+        "answer": "A",
+        "correct": false
+      },
+      {
+        "id": "P049",
+        "prediction": null,
+        "answer": "B",
+        "correct": false
+      },
+      {
+        "id": "P050",
+        "prediction": null,
+        "answer": "A",
+        "correct": false
+      },
+      {
+        "id": "P051",
+        "prediction": null,
+        "answer": "B",
+        "correct": false
+      },
+      {
+        "id": "P052",
+        "prediction": null,
+        "answer": "A",
+        "correct": false
+      },
+      {
+        "id": "P053",
+        "prediction": null,
+        "answer": "A",
+        "correct": false
+      },
+      {
+        "id": "P054",
+        "prediction": null,
+        "answer": "B",
+        "correct": false
+      },
+      {
+        "id": "P055",
+        "prediction": null,
+        "answer": "B",
+        "correct": false
+      },
+      {
+        "id": "P056",
+        "prediction": null,
+        "answer": "A",
+        "correct": false
+      },
+      {
+        "id": "P057",
+        "prediction": null,
+        "answer": "B",
+        "correct": false
+      },
+      {
+        "id": "P058",
+        "prediction": null,
+        "answer": "B",
+        "correct": false
+      },
+      {
+        "id": "P059",
+        "prediction": null,
+        "answer": "A",
+        "correct": false
+      },
+      {
+        "id": "P060",
+        "prediction": null,
+        "answer": "A",
+        "correct": false
+      },
+      {
+        "id": "P061",
+        "prediction": null,
+        "answer": "B",
+        "correct": false
+      },
+      {
+        "id": "P062",
+        "prediction": null,
+        "answer": "B",
+        "correct": false
+      },
+      {
+        "id": "P063",
+        "prediction": null,
+        "answer": "B",
+        "correct": false
+      },
+      {
+        "id": "P064",
+        "prediction": null,
+        "answer": "B",
+        "correct": false
+      },
+      {
+        "id": "P065",
+        "prediction": null,
+        "answer": "B",
+        "correct": false
+      },
+      {
+        "id": "P066",
+        "prediction": null,
+        "answer": "A",
+        "correct": false
+      },
+      {
+        "id": "P067",
+        "prediction": null,
+        "answer": "B",
+        "correct": false
+      },
+      {
+        "id": "P068",
+        "prediction": null,
+        "answer": "B",
+        "correct": false
+      },
+      {
+        "id": "P069",
+        "prediction": null,
+        "answer": "A",
+        "correct": false
+      },
+      {
+        "id": "P070",
+        "prediction": null,
+        "answer": "B",
+        "correct": false
+      },
+      {
+        "id": "P071",
+        "prediction": null,
+        "answer": "A",
+        "correct": false
+      },
+      {
+        "id": "P072",
+        "prediction": null,
+        "answer": "A",
+        "correct": false
+      },
+      {
+        "id": "P073",
+        "prediction": null,
+        "answer": "A",
+        "correct": false
+      },
+      {
+        "id": "P074",
+        "prediction": null,
+        "answer": "A",
+        "correct": false
+      },
+      {
+        "id": "P075",
+        "prediction": null,
+        "answer": "A",
+        "correct": false
+      },
+      {
+        "id": "P076",
+        "prediction": null,
+        "answer": "B",
+        "correct": false
+      },
+      {
+        "id": "P077",
+        "prediction": null,
+        "answer": "A",
+        "correct": false
+      },
+      {
+        "id": "P078",
+        "prediction": null,
+        "answer": "A",
+        "correct": false
+      },
+      {
+        "id": "P079",
+        "prediction": null,
+        "answer": "B",
+        "correct": false
+      },
+      {
+        "id": "P080",
+        "prediction": null,
+        "answer": "B",
+        "correct": false
+      },
+      {
+        "id": "P081",
+        "prediction": null,
+        "answer": "B",
+        "correct": false
+      },
+      {
+        "id": "P082",
+        "prediction": null,
+        "answer": "B",
+        "correct": false
+      },
+      {
+        "id": "P083",
+        "prediction": null,
+        "answer": "B",
+        "correct": false
+      },
+      {
+        "id": "P084",
+        "prediction": null,
+        "answer": "B",
+        "correct": false
+      },
+      {
+        "id": "P085",
+        "prediction": null,
+        "answer": "B",
+        "correct": false
+      },
+      {
+        "id": "P086",
+        "prediction": null,
+        "answer": "A",
+        "correct": false
+      },
+      {
+        "id": "P087",
+        "prediction": null,
+        "answer": "B",
+        "correct": false
+      },
+      {
+        "id": "P088",
+        "prediction": null,
+        "answer": "A",
+        "correct": false
+      },
+      {
+        "id": "P089",
+        "prediction": null,
+        "answer": "A",
+        "correct": false
+      },
+      {
+        "id": "P090",
+        "prediction": null,
+        "answer": "B",
+        "correct": false
+      },
+      {
+        "id": "P091",
+        "prediction": null,
+        "answer": "A",
+        "correct": false
+      },
+      {
+        "id": "P092",
+        "prediction": null,
+        "answer": "B",
+        "correct": false
+      },
+      {
+        "id": "P093",
+        "prediction": null,
+        "answer": "B",
+        "correct": false
+      },
+      {
+        "id": "P094",
+        "prediction": null,
+        "answer": "B",
+        "correct": false
+      },
+      {
+        "id": "P095",
+        "prediction": null,
+        "answer": "A",
+        "correct": false
+      },
+      {
+        "id": "P096",
+        "prediction": null,
+        "answer": "A",
+        "correct": false
+      },
+      {
+        "id": "P097",
+        "prediction": null,
+        "answer": "A",
+        "correct": false
+      },
+      {
+        "id": "P098",
+        "prediction": null,
+        "answer": "B",
+        "correct": false
+      },
+      {
+        "id": "P099",
+        "prediction": null,
+        "answer": "B",
+        "correct": false
+      },
+      {
+        "id": "P100",
+        "prediction": null,
+        "answer": "A",
+        "correct": false
+      }
+    ]
+  }
+}
