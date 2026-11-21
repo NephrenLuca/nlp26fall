@@ -1,11 +1,11 @@
 """在 predict 中实现你的提示词与模型调用流程。
 
-实验分4步，逐步取消注释：
-  步骤1 直接指令（zero-shot）          —— 当前启用
-  步骤2 few-shot（检索相似示例）        —— 注释中
-  步骤3 分步比较（结构化CoT+日期差）    —— 注释中
-  步骤4 多次采样投票 + A/B交换去偏      —— 注释中
-每一步都要同时取消 prompts.py 与本文件中对应步骤的注释，并修改 predict 中启用的那一行。
+实验分4步，由下方常量 STEP 选择启用哪一步：
+  步骤1 直接指令（zero-shot）
+  步骤2 few-shot（检索相似示例）
+  步骤3 分步比较（结构化CoT+日期差）
+  步骤4 多次采样投票 + A/B交换去偏（最终方案，默认启用）
+一键按顺序运行全部步骤：python run_all.py
 提示词只在 prompts.py 中修改；下方 PROMPTS 区块由 sync_prompts.py 自动生成（run.py 会自动同步）。
 """
 import re
@@ -46,37 +46,35 @@ Answer: B"""
 
 # ---------------------------------------------------------------------------
 # 【步骤2】few-shot：从示例池检索相似样例，作为多轮对话示范
-# UNDO 时机：步骤1 跑完完整公开集并记录准确率后，取消下面整段注释（同时取消 solution.py 中步骤2的代码注释）。
 # 复用步骤1的 DIRECT_SYSTEM；示例的 user 轮复用 DIRECT_USER，assistant 轮用 FEWSHOT_ANSWER。
 # ---------------------------------------------------------------------------
-# FEWSHOT_SYSTEM = """You are an expert in scientometrics who predicts how often research papers get cited. You will first see several solved examples with the correct answers, then a new question. Learn from the examples which kinds of papers tend to be cited more."""
-#
-# FEWSHOT_ANSWER = """Answer: {answer}"""
+FEWSHOT_SYSTEM = """You are an expert in scientometrics who predicts how often research papers get cited. You will first see several solved examples with the correct answers, then a new question. Learn from the examples which kinds of papers tend to be cited more."""
+
+FEWSHOT_ANSWER = """Answer: {answer}"""
 
 # ---------------------------------------------------------------------------
 # 【步骤3】分步比较（结构化思维链 + 领域判据 + 代码预先计算的日期差）
-# UNDO 时机：步骤2 跑完并记录准确率后，取消下面整段注释（同时取消 solution.py 中步骤3的代码注释）。
 # ---------------------------------------------------------------------------
-# COT_SYSTEM = """You are an expert in scientometrics. Your job is to predict which of two papers has more citations. Citation counts are driven mainly by: (1) the size and activity of the research community of the topic; (2) how broadly useful the contribution is (new general methods, datasets, benchmarks, software tools, surveys and foundational theory are cited far more than narrow case studies or incremental variants); (3) the strength and novelty of the claims; (4) the time a paper has had to accumulate citations (an earlier paper has an advantage, but a gap of a few months matters much less than topic and contribution type)."""
-#
-# COT_USER = """Predict which paper had received MORE citations at the time the data was recorded.
-#
-# {pair}
-#
-# Extra context: {date_note}
-#
-# Compare the papers step by step:
-# 1. Field and community size of each paper (is it a hot, large area or a small niche?).
-# 2. Type of contribution (method / dataset / benchmark / tool / survey / theory / application / case study) and how widely reusable it is.
-# 3. Significance and generality of the results as claimed in the abstract.
-# 4. Effect of the publication date gap.
-# Then weigh these factors and decide.
-#
-# The LAST line of your reply must be exactly "Answer: A" or "Answer: B"."""
-#
-# DATE_NOTE_TEMPLATE = """Paper {older} was published {gap} days earlier than Paper {newer}."""
-#
-# SAME_DAY_NOTE = """Both papers were published on the same day."""
+COT_SYSTEM = """You are an expert in scientometrics. Your job is to predict which of two papers has more citations. Citation counts are driven mainly by: (1) the size and activity of the research community of the topic; (2) how broadly useful the contribution is (new general methods, datasets, benchmarks, software tools, surveys and foundational theory are cited far more than narrow case studies or incremental variants); (3) the strength and novelty of the claims; (4) the time a paper has had to accumulate citations (an earlier paper has an advantage, but a gap of a few months matters much less than topic and contribution type)."""
+
+COT_USER = """Predict which paper had received MORE citations at the time the data was recorded.
+
+{pair}
+
+Extra context: {date_note}
+
+Compare the papers step by step:
+1. Field and community size of each paper (is it a hot, large area or a small niche?).
+2. Type of contribution (method / dataset / benchmark / tool / survey / theory / application / case study) and how widely reusable it is.
+3. Significance and generality of the results as claimed in the abstract.
+4. Effect of the publication date gap.
+Then weigh these factors and decide.
+
+The LAST line of your reply must be exactly "Answer: A" or "Answer: B"."""
+
+DATE_NOTE_TEMPLATE = """Paper {older} was published {gap} days earlier than Paper {newer}."""
+
+SAME_DAY_NOTE = """Both papers were published on the same day."""
 
 # ---------------------------------------------------------------------------
 # 【步骤4】多次采样投票 + 交换A/B位置去偏
@@ -84,6 +82,7 @@ Answer: B"""
 # ---------------------------------------------------------------------------
 # ===== PROMPTS END =====
 
+STEP = 4                 # 启用的实验步骤：1 直接指令 / 2 few-shot / 3 分步比较 / 4 投票；run_all.py 会逐步改写此行
 MAX_CALLS = 5            # 每题平均调用预算（5×n 全局共享，超出会导致其他题目失败）
 MAX_REQUEST_BYTES = 19000  # 框架限制单次请求 20,000 字节，留余量
 DEFAULT_ANSWER = "A"     # 所有调用均失败或无法提取答案时的兜底
@@ -165,115 +164,112 @@ def method_direct(pair, examples, llm, tries=2):
 
 # ---------------------------------------------------------------------------
 # 【步骤2】few-shot：按词重叠（Jaccard）从示例池检索相似样例，A/B 标签各半避免标签偏置
-# UNDO 时机：步骤1 跑完完整公开集并记录准确率后，取消本段注释（prompts.py 中步骤2也要取消）。
 # ---------------------------------------------------------------------------
-# STOPWORDS = set("""a an the of and or in on for to with by from at as is are was were be been this that these
-# those we our us it its which can using based via into over under than then also such their they paper
-# propose proposed show shows present new approach method methods results study model models""".split())
-#
-#
-# def tokens(text):
-#     return set(w for w in re.findall(r"[a-z][a-z0-9\-]+", text.lower()) if w not in STOPWORDS and len(w) > 2)
-#
-#
-# def pair_tokens(pair):
-#     return tokens(" ".join(pair[k]["title"] + " " + pair[k]["abstract"] for k in ("paper_a", "paper_b")))
-#
-#
-# def select_examples(pair, examples, k=4):
-#     """取与当前题最相似的示例，A/B 各 k/2 条；按相似度升序排列，最相似的离问题最近。"""
-#     query = pair_tokens(pair)
-#
-#     def score(ex):
-#         other = pair_tokens(ex)
-#         return len(query & other) / max(1, len(query | other))
-#
-#     ranked = sorted(examples, key=score, reverse=True)
-#     chosen = [e for e in ranked if e["answer"] == "A"][:k // 2] + [e for e in ranked if e["answer"] == "B"][:k - k // 2]
-#     return sorted(chosen, key=score)
-#
-#
-# def fewshot_messages(system, user_template, shots, query_user, fill):
-#     """shots 依次组成 user/assistant 轮；超出字节上限时先丢弃最不相似的示例。"""
-#     while True:
-#         messages = [{"role": "system", "content": system}]
-#         for ex in shots:
-#             messages.append({"role": "user", "content": user_template.format(**fill(ex))})
-#             messages.append({"role": "assistant", "content": FEWSHOT_ANSWER.format(answer=ex["answer"])})
-#         messages.append({"role": "user", "content": query_user})
-#         if request_bytes(messages) <= MAX_REQUEST_BYTES or not shots:
-#             return messages
-#         shots = shots[1:]
-#
-#
-# def method_fewshot(pair, examples, llm, tries=2, k=4):
-#     shots = select_examples(pair, examples, k)
-#     messages = fewshot_messages(FEWSHOT_SYSTEM, DIRECT_USER, shots,
-#                                 DIRECT_USER.format(pair=format_pair(pair)),
-#                                 lambda ex: {"pair": format_pair(ex)})
-#     return ask(llm, messages, tries)
+STOPWORDS = set("""a an the of and or in on for to with by from at as is are was were be been this that these
+those we our us it its which can using based via into over under than then also such their they paper
+propose proposed show shows present new approach method methods results study model models""".split())
+
+
+def tokens(text):
+    return set(w for w in re.findall(r"[a-z][a-z0-9\-]+", text.lower()) if w not in STOPWORDS and len(w) > 2)
+
+
+def pair_tokens(pair):
+    return tokens(" ".join(pair[k]["title"] + " " + pair[k]["abstract"] for k in ("paper_a", "paper_b")))
+
+
+def select_examples(pair, examples, k=4):
+    """取与当前题最相似的示例，A/B 各 k/2 条；按相似度升序排列，最相似的离问题最近。"""
+    query = pair_tokens(pair)
+
+    def score(ex):
+        other = pair_tokens(ex)
+        return len(query & other) / max(1, len(query | other))
+
+    ranked = sorted(examples, key=score, reverse=True)
+    chosen = [e for e in ranked if e["answer"] == "A"][:k // 2] + [e for e in ranked if e["answer"] == "B"][:k - k // 2]
+    return sorted(chosen, key=score)
+
+
+def fewshot_messages(system, user_template, shots, query_user, fill):
+    """shots 依次组成 user/assistant 轮；超出字节上限时先丢弃最不相似的示例。"""
+    while True:
+        messages = [{"role": "system", "content": system}]
+        for ex in shots:
+            messages.append({"role": "user", "content": user_template.format(**fill(ex))})
+            messages.append({"role": "assistant", "content": FEWSHOT_ANSWER.format(answer=ex["answer"])})
+        messages.append({"role": "user", "content": query_user})
+        if request_bytes(messages) <= MAX_REQUEST_BYTES or not shots:
+            return messages
+        shots = shots[1:]
+
+
+def method_fewshot(pair, examples, llm, tries=2, k=4):
+    shots = select_examples(pair, examples, k)
+    messages = fewshot_messages(FEWSHOT_SYSTEM, DIRECT_USER, shots,
+                                DIRECT_USER.format(pair=format_pair(pair)),
+                                lambda ex: {"pair": format_pair(ex)})
+    return ask(llm, messages, tries)
 
 
 # ---------------------------------------------------------------------------
 # 【步骤3】分步比较：结构化判据 + 代码预先算好的日期差（上下文工程），并沿用步骤2的 few-shot 示例
-# UNDO 时机：步骤2 跑完并记录准确率后，取消本段注释（prompts.py 中步骤3也要取消）。
 # 依赖步骤2的 select_examples / fewshot_messages，步骤2的代码须保持取消注释状态。
 # 想单独测“不带示例的CoT”，把 method_cot 的 k 设为 0 即可。
 # ---------------------------------------------------------------------------
-# def days_from_civil(y, m, d):
-#     y -= m <= 2
-#     era = (y if y >= 0 else y - 399) // 400
-#     yoe = y - era * 400
-#     doy = (153 * (m + (-3 if m > 2 else 9)) + 2) // 5 + d - 1
-#     doe = yoe * 365 + yoe // 4 - yoe // 100 + doy
-#     return era * 146097 + doe - 719468
-#
-#
-# def parse_days(date):
-#     parts = [int(x) for x in re.findall(r"\d+", date)] + [1, 1]
-#     return days_from_civil(parts[0], parts[1], parts[2])
-#
-#
-# def date_note(pair):
-#     gap = parse_days(pair["paper_b"]["date"]) - parse_days(pair["paper_a"]["date"])
-#     if gap == 0:
-#         return SAME_DAY_NOTE
-#     return DATE_NOTE_TEMPLATE.format(older="A" if gap > 0 else "B", newer="B" if gap > 0 else "A", gap=abs(gap))
-#
-#
-# def cot_fill(pair):
-#     return {"pair": format_pair(pair), "date_note": date_note(pair)}
-#
-#
-# def method_cot(pair, examples, llm, tries=2, k=4):
-#     shots = select_examples(pair, examples, k) if k else []
-#     messages = fewshot_messages(COT_SYSTEM, COT_USER, shots, COT_USER.format(**cot_fill(pair)), cot_fill)
-#     return ask(llm, messages, tries)
+def days_from_civil(y, m, d):
+    y -= m <= 2
+    era = (y if y >= 0 else y - 399) // 400
+    yoe = y - era * 400
+    doy = (153 * (m + (-3 if m > 2 else 9)) + 2) // 5 + d - 1
+    doe = yoe * 365 + yoe // 4 - yoe // 100 + doy
+    return era * 146097 + doe - 719468
+
+
+def parse_days(date):
+    parts = [int(x) for x in re.findall(r"\d+", date)] + [1, 1]
+    return days_from_civil(parts[0], parts[1], parts[2])
+
+
+def date_note(pair):
+    gap = parse_days(pair["paper_b"]["date"]) - parse_days(pair["paper_a"]["date"])
+    if gap == 0:
+        return SAME_DAY_NOTE
+    return DATE_NOTE_TEMPLATE.format(older="A" if gap > 0 else "B", newer="B" if gap > 0 else "A", gap=abs(gap))
+
+
+def cot_fill(pair):
+    return {"pair": format_pair(pair), "date_note": date_note(pair)}
+
+
+def method_cot(pair, examples, llm, tries=2, k=4):
+    shots = select_examples(pair, examples, k) if k else []
+    messages = fewshot_messages(COT_SYSTEM, COT_USER, shots, COT_USER.format(**cot_fill(pair)), cot_fill)
+    return ask(llm, messages, tries)
 
 
 # ---------------------------------------------------------------------------
 # 【步骤4】多次采样投票（self-consistency）+ 交换 A/B 位置抵消位置偏置
-# UNDO 时机：步骤3 跑完并记录准确率后，取消本段注释。
 # single 传入前几步中效果最好的方法（默认 method_cot）。共 votes 次投票，平票时再追加一次，总调用 ≤ MAX_CALLS。
 # ---------------------------------------------------------------------------
-# def method_vote(pair, examples, llm, single, votes=4):
-#     counter = Counter()
-#     first = None
-#     for i in range(votes):
-#         swapped = i % 2 == 1
-#         answer = single(swap_pair(pair) if swapped else pair, examples, llm, tries=1)
-#         if swapped:
-#             answer = flip(answer)
-#         if answer:
-#             counter[answer] += 1
-#             first = first or answer
-#     if counter["A"] == counter["B"] and votes < MAX_CALLS:
-#         answer = single(pair, examples, llm, tries=1)
-#         if answer:
-#             counter[answer] += 1
-#     if counter["A"] == counter["B"]:
-#         return first
-#     return counter.most_common(1)[0][0]
+def method_vote(pair, examples, llm, single, votes=4):
+    counter = Counter()
+    first = None
+    for i in range(votes):
+        swapped = i % 2 == 1
+        answer = single(swap_pair(pair) if swapped else pair, examples, llm, tries=1)
+        if swapped:
+            answer = flip(answer)
+        if answer:
+            counter[answer] += 1
+            first = first or answer
+    if counter["A"] == counter["B"] and votes < MAX_CALLS:
+        answer = single(pair, examples, llm, tries=1)
+        if answer:
+            counter[answer] += 1
+    if counter["A"] == counter["B"]:
+        return first
+    return counter.most_common(1)[0][0]
 
 
 def predict(pair, examples, llm):
@@ -283,18 +279,13 @@ def predict(pair, examples, llm):
     examples: 100 条示例，另含 id 和 answer。
     llm.chat(messages): 接收消息列表，返回 content 和 reasoning。
     """
-    # 每次只启用一行 return；切换步骤时注释掉当前行、取消下一步那一行的注释。
-
-    # 【步骤1】直接指令
-    answer = method_direct(pair, examples, llm)
-
-    # 【步骤2】UNDO 时机：步骤1 记录结果后。注释掉上面步骤1那行，取消下一行注释
-    # answer = method_fewshot(pair, examples, llm)
-
-    # 【步骤3】UNDO 时机：步骤2 记录结果后。注释掉步骤2那行，取消下一行注释
-    # answer = method_cot(pair, examples, llm)
-
-    # 【步骤4】UNDO 时机：步骤3 记录结果后。注释掉步骤3那行，取消下一行注释
-    # answer = method_vote(pair, examples, llm, method_cot)
+    if STEP == 1:
+        answer = method_direct(pair, examples, llm)
+    elif STEP == 2:
+        answer = method_fewshot(pair, examples, llm)
+    elif STEP == 3:
+        answer = method_cot(pair, examples, llm)
+    else:
+        answer = method_vote(pair, examples, llm, method_cot)
 
     return answer if answer in ("A", "B") else DEFAULT_ANSWER
