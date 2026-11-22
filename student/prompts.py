@@ -39,30 +39,43 @@ FEWSHOT_SYSTEM = """You are an expert in scientometrics who predicts how often r
 FEWSHOT_ANSWER = """Answer: {answer}"""
 
 # ---------------------------------------------------------------------------
-# 【步骤3】分步比较（结构化思维链 + 领域判据 + 代码预先计算的日期差）
+# 【步骤3】分步比较（结构化思维链 + 领域判据；日期差不作为判据）
 # ---------------------------------------------------------------------------
-COT_SYSTEM = """You are an expert in scientometrics. Your job is to predict which of two papers has more citations. Citation counts are driven mainly by: (1) the size and activity of the research community of the topic; (2) how broadly useful the contribution is (new general methods, datasets, benchmarks, software tools, surveys and foundational theory are cited far more than narrow case studies or incremental variants); (3) the strength and novelty of the claims; (4) the time a paper has had to accumulate citations (an earlier paper has an advantage, but a gap of a few months matters much less than topic and contribution type)."""
+COT_SYSTEM = """You are an expert in scientometrics. Your job is to predict which of two papers has more citations. Citation counts are driven mainly by: (1) the size and activity of the research community of the topic; (2) how broadly useful the contribution is (new general methods, datasets, benchmarks, software tools, surveys and foundational theory are cited far more than narrow case studies or incremental variants); (3) the strength and novelty of the claims. The two papers were published close in time (usually within a year), so the date gap has almost no effect: do not favor a paper just because it is older."""
 
 COT_USER = """Predict which paper had received MORE citations at the time the data was recorded.
 
 {pair}
 
-Extra context: {date_note}
-
 Compare the papers step by step:
 1. Field and community size of each paper (is it a hot, large area or a small niche?).
 2. Type of contribution (method / dataset / benchmark / tool / survey / theory / application / case study) and how widely reusable it is.
 3. Significance and generality of the results as claimed in the abstract.
-4. Effect of the publication date gap.
 Then weigh these factors and decide.
 
 The LAST line of your reply must be exactly "Answer: A" or "Answer: B"."""
 
-DATE_NOTE_TEMPLATE = """Paper {older} was published {gap} days earlier than Paper {newer}."""
+# ---------------------------------------------------------------------------
+# 【步骤5】单独打分：先给每篇论文的引用潜力独立打1-10分，再比较分数
+# ---------------------------------------------------------------------------
+SCORE_SYSTEM = """You are an expert in scientometrics who estimates the citation potential of research papers. Judge each paper on its own merits: the size and activity of its research field, the type and reusability of its contribution, and the significance of its claims."""
 
-SAME_DAY_NOTE = """Both papers were published on the same day."""
+SCORE_USER = """Below are two research papers. Rate the citation potential of EACH paper independently, as if you had not seen the other one, on a 1-10 scale (1 = rarely cited niche work, 10 = highly influential work in a large, active field).
+
+{pair}
+
+For each paper, briefly consider:
+- how large and active its research field is;
+- what kind of contribution it makes (method / dataset / benchmark / tool / survey / theory / application / case study) and how widely reusable it is;
+- how significant and general its claims are.
+The papers were published close in time, so ignore the date gap. Rate Paper A first, then Paper B, and avoid giving both papers the same score.
+
+End your reply with exactly these three lines:
+Score A: <1-10>
+Score B: <1-10>
+Answer: <A or B, the paper with the higher score>"""
 
 # ---------------------------------------------------------------------------
-# 【步骤4】多次采样投票 + 交换A/B位置去偏
-# 不需要新提示词：复用步骤3（或效果最好那一步）的提示词，见 solution.py 的 method_vote。
+# 【步骤4】混合投票 + 交换A/B位置去偏（最终方案）
+# 不需要新提示词：分步比较×3 + 单独打分×2，见 solution.py 的 VOTE_PLAN 与 method_vote。
 # ---------------------------------------------------------------------------

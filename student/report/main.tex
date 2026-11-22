@@ -8,55 +8,157 @@
 \renewcommand{\@noticestring}{自然语言处理与大语言模型\quad 实验课1报告}
 \makeatother
 \linespread{1.15}
-\title{论文比较中的提示词探索：填写你的研究问题}
+\title{论文引用数比较中的提示词探索：\\显式判据与位置去偏能否帮助4B思考模型？}
 \author{姓名\quad 学号\\复旦大学}
-\newcommand{\todo}[1]{\textcolor{gray}{#1}}
 \begin{document}
 \maketitle
 \begin{abstract}
-\todo{用三四句话概括研究问题、比较的方法和主要发现。}
+本实验让Qwen3-4B（thinking）根据两篇论文的标题、摘要和日期判断哪篇引用数更高。我们依次实现了直接指令、检索式few-shot、结构化分步比较、多次采样投票加A/B交换去偏四种方案，在100条公开集上的准确率分别为68\%、69\%、72\%、73\%，最终方案达到公开集最高档门槛。误差分析表明：零样本存在明显的“偏向A”的位置偏置，交换位置投票能将其消除；few-shot改变了29题的答案却只净增1题；所有提升都在一个标准误（约4.5个百分点）以内；另有10题四种方法全部答错，主要源于模型对“领域热度”和“贡献类型”的误判以及提示词中关于发表时间的先验与数据不符。
 \end{abstract}
-\section{问题分析}
-\todo{以下章节可按自己的探索过程调整。}
-\todo{提出一个具体问题，例如“明确比较维度能否提高准确率”。说明你的判断依据与预期。}
 
-\todo{简述方案：如何选择示例、组织提示词、调用模型并提取A/B。}
+\section{问题分析}
+\paragraph{任务特点。}每道题给出同一时期、通常同一领域的两篇论文，要求判断记录时引用数更高的一篇。引用数取决于领域规模、贡献类型（方法、数据集、工具、综述还是个案研究）、成果的通用性以及积累引用的时间，这些信息只能从摘要中间接推断，没有确定答案，因此即使是人类专家也难以做到很高的准确率。我们在100条示例池上做了简单统计（未使用公开集标签）：答案A、B各占50\%；两篇论文日期差的中位数约3个月、最大不超过11个月，“较早发表的一篇胜出”的比例仅为49\%；“摘要较长的一篇胜出”为58\%，是一个弱信号。
+
+\paragraph{研究问题与预期。}本实验关注的问题是：\emph{对一个4B规模的思考模型，“给出明确的比较维度”与“抵消位置偏置”能否带来稳定的提升？}我们的预期是：(1)小模型零样本时容易受选项顺序影响，交换A/B并投票可以抵消这种偏置；(2)明确列出引用数的驱动因素能让模型的推理更聚焦；(3)few-shot示例的标签信息有限（只给出答案，不给理由），作用可能不大。
+
+\paragraph{整体方案。}所有方法共用同一套论文格式（标题、日期、摘要，空白字符规整为单个空格）和答案提取逻辑：要求模型最后一行输出\texttt{Answer: A/B}，用正则表达式取最后一次出现的答案；若最终回答中提取不到，再从思考文本的末尾600个字符中提取；仍失败则重试，所有调用都失败时返回兜底答案A。单次请求的总长度控制在19000字节以内（框架上限为20000字节）。各步骤通过常量\texttt{STEP}切换，提示词集中写在\texttt{prompts.py}中，并自动同步到\texttt{solution.py}。
+
 \section{提示词调优过程}
-\todo{至少尝试3种提示词工程方法，例如直接指令、few-shot、分步比较或多次采样投票。说明各方法的设计、结果和原因，解释最终选择。正文摘录关键改动，最终选定的完整提示词放附录。}
+\paragraph{方法1：直接指令（zero-shot）。}system提示把模型设定为“预测论文引用数的科学计量学专家”，user提示给出两篇论文，只要求输出一行答案。这是基线，每题调用1次。
+
+\paragraph{方法2：检索式few-shot。}从100条示例池中按词重叠（去停用词后的Jaccard相似度）检索与当前题最相似的4条示例，其中答案为A、B的各2条，以避免标签偏置；示例按相似度升序排列，使最相似的示例离问题最近。示例以多轮对话形式给出（user轮是论文对，assistant轮是\texttt{Answer: X}），超过字节上限时先丢弃最不相似的示例。
+
+\paragraph{方法3：结构化分步比较。}在方法2的示例检索基础上，更换system与user提示：system中列出引用数的四个主要驱动因素（领域规模、贡献类型与可复用性、结论的强度与新颖性、积累时间，并说明几个月的日期差远不如领域和贡献类型重要）；user中要求模型按“领域与社区规模→贡献类型→结论的重要性与通用性→日期差的影响”四步比较后再做决定。日期差由代码预先算好，以“Paper A比Paper B早发表N天”的形式写入提示，避免小模型自己做日期运算出错（上下文工程）。
+
+\paragraph{方法4：多次采样投票 + A/B交换去偏（最终方案）。}以方法3为单次判断，每题调用4次，其中第2、4次交换两篇论文的位置，并把答案映射回原顺序；按多数票决定，2:2平票时追加一次原顺序调用，仍平票则取第一个有效答案。实际共调用417次，说明有17题出现了平票。
+
 \begin{table}[h]
 \centering
-\caption{不同方法在同一份100条公开集上的运行结果。}
-\begin{tabularx}{\linewidth}{lXrrr}
+\caption{不同方法在同一份100条公开集上的运行结果。“预测A数”为100题中输出A的数量（真实标签中A、B各50个）。}
+\label{tab:main}
+\small
+\begin{tabularx}{\linewidth}{lXrrrrr}
 \toprule
-方法 & 主要思路 & 正确数/100 & 调用数 & 无效返回\\
+方法 & 主要思路 & 正确数/100 & 调用数 & 无效返回 & 预测A数 & 总Token\\
 \midrule
-方法1 & 待填 & 待填 & 待填 & 待填\\
-方法2 & 待填 & 待填 & 待填 & 待填\\
-方法3 & 待填 & 待填 & 待填 & 待填\\
+方法1 & 直接指令，单次调用 & 68 & 100 & 0 & 58 & 14.5万\\
+方法2 & 相似示例4-shot（A、B各2条） & 69 & 100 & 0 & 49 & 37.8万\\
+方法3 & 判据+分步比较+日期差+4-shot & 72 & 100 & 0 & 52 & 44.5万\\
+方法4 & 方法3×4次投票，交换A/B & \textbf{73} & 417 & 0 & 47 & 187.4万\\
 \bottomrule
 \end{tabularx}
 \end{table}
+
+\paragraph{结果与分析。}表\ref{tab:main}中四种方法都没有无效返回，也没有因长度截断而失败，说明答案提取逻辑足够稳健。主要观察如下：
+
+\begin{itemize}
+\item \textbf{零样本存在位置偏置。}方法1预测A 58次，对真实答案为A的题召回38/50，对真实答案为B的题只召回30/50。加入A、B平衡的示例后，预测A的次数降到49；方法4通过交换位置投票进一步降到47，对A、B两类的召回分别为35和38，偏置基本消除。
+\item \textbf{few-shot的作用接近随机扰动。}方法2与方法1有29题答案不同，其中方法2对15题、方法1对14题，净增只有1题。示例只提供“答案”而不提供“理由”，4B模型很难从4个例子中归纳出可迁移的判断规律；同时prompt长度增加到原来的约5倍。
+\item \textbf{显式判据带来较大的单步提升}（69→72）。在模型的思考文本中可以看到它确实按“领域—贡献类型—重要性—日期”的顺序逐项比较，判断依据比方法1更具体。
+\item \textbf{投票的边际收益很小。}方法4与方法3只有15题答案不同（8:7，净增1题），调用数和Token却是方法3的约4倍。17题出现2:2平票，说明这些题上模型的判断本身就不稳定，多数票只能在两个近似随机的答案间做选择。
+\end{itemize}
+
+\paragraph{统计显著性。}在100题上，70\%左右准确率的标准误约为$\sqrt{0.7\times0.3/100}\approx4.6$个百分点。方法1与方法4的答案有29题不同，其中方法4对17题、方法1对12题，McNemar检验$\chi^2=(|17-12|-1)^2/29\approx0.55$，$p\approx0.46$，差异并不显著。因此上述排序只能视为趋势，私有集上的结果可能会有±5个百分点的波动。
+
+\paragraph{最终选择。}我们最终提交方法4，理由是：(1)它在公开集上准确率最高（73\%）；(2)它对A、B两类答案的召回最均衡，不依赖选项顺序，在分布未知的私有集上更稳健；(3)417/500的调用量留有余量，不会因预算耗尽导致漏答。代价是运行时间约11分钟，是方法1的7倍。
+
 \clearpage
 \section{实验心得}
-\todo{结合结果和代表性案例，分析哪些改动有效、哪些没有达到预期，以及可能的原因。}
 \begin{figure}[h]
 \centering
 \IfFileExists{figures/run.png}{\includegraphics[width=\linewidth,height=5cm,keepaspectratio]{figures/run.png}}{\fbox{\parbox[c][3cm][c]{0.92\linewidth}{\centering 放入自己的运行与评测截图\\展示结果排行榜、完成条数和调用预算\\保存为figures/run.png}}}
-\caption{自己的真实运行记录，截图中的版本、正确数与表格一致。}
+\caption{真实运行记录（\texttt{runs/reports/}中的结果排行榜）。四次完整运行分别为68、69、72、73题正确，与表\ref{tab:main}一致。}
 \end{figure}
 
-\todo{总结最有价值的发现、方法的局限和进一步改进的方向。}
-\todo{正文2—4页，最多4页，包含真实运行截图。}
+\paragraph{方法之间的互补性。}四种方法两两之间的答案一致率在71\%--85\%之间，方法3与方法2、方法3与方法4都是85\%。至少被一种方法答对的题有90道，只有10道题（P012、P017、P039、P044、P052、P062、P074、P081、P083、P091）四种方法全部答错。但对四种方法的答案简单取多数只得到71题正确，低于方法4，说明各方法的“对”并不集中在可以通过投票挑出来的地方。
+
+\paragraph{代表性错误案例。}
+\begin{itemize}
+\item \textbf{P039}：A是深度学习训练基准\emph{TBD: Benchmarking and Analyzing Deep Neural Network Training}（2018年3月），B是高斯过程软件库\emph{GPyTorch}（2018年9月），真实答案为B。模型抓住了system提示中“benchmark被引更多”这一条，同时认为A“早半年发表、有时间优势”，于是选了A；但它忽略了GPyTorch作为通用工具库的长期被引潜力。
+\item \textbf{P044}：A是用现成生成模型发现视觉模型缺陷（2022年8月），B是\emph{Score Jacobian Chaining}，把2D扩散模型提升到3D生成（2022年12月），真实答案为B。模型低估了“扩散模型+3D生成”在当时的热度，又一次把较早的日期当作优势。
+\item \textbf{P012 / P081}：两题都是天体物理领域内部的比较（矮星系化学组成 vs.\ 黑洞双星；伽马射线望远镜触发策略 vs.\ 尘埃磁取向）。同一领域内的细分方向热度差异，需要相当具体的领域知识，4B模型往往只能给出含糊的“两者都是小众方向”的判断，最后的选择接近随机。
+\end{itemize}
+
+\paragraph{哪些改动没有达到预期。}(1)\textbf{日期先验与数据不符。}方法3的提示中写了“更早的论文有优势”，并专门提供日期差，但示例池中较早一篇胜出的比例仅为49\%；P039、P044都是模型因为“早发表”而选错。这条先验来自常识，没有先用数据验证，是本实验最明显的设计失误。(2)\textbf{few-shot示例没有理由。}只给答案的示例几乎没有带来增益，反而让prompt长度增加约5倍。(3)\textbf{同一提示重复投票多样性不足。}方法3与方法4的答案高度相关，投票主要抵消了位置偏置，而没有纠正系统性的判断错误。
+
+\paragraph{总结与改进方向。}本实验最有价值的发现有三点：小模型零样本存在可测量的位置偏置，交换A/B投票能有效消除；明确列出判断维度比堆叠示例更有效；在100题规模上，几个百分点的差异很容易被噪声淹没，结论必须结合显著性来看。局限在于所有调参都只在100条公开集上进行，存在过拟合风险，而私有集的满分门槛（75\%）更高。后续可尝试：(1)删除或弱化日期先验，改为“日期差基本不影响结果”；(2)先让模型独立给每篇论文的引用潜力打分，再比较分数，以减少成对比较中的顺序干扰；(3)固定5次奇数票，并混合不同风格的提示词，提高投票的多样性；(4)给few-shot示例配上简短的判断理由；(5)把示例池也当作验证集，并在选例时排除当前题本身，使用200题比较方案以降低噪声。
+
 \clearpage
 \section*{参考文献}
-\todo{列出实际引用的文献。参考文献与附录另起页。}
+\begin{enumerate}
+\small
+\item T.~Brown et al. Language Models are Few-Shot Learners. \emph{NeurIPS}, 2020.
+\item J.~Wei et al. Chain-of-Thought Prompting Elicits Reasoning in Large Language Models. \emph{NeurIPS}, 2022.
+\item X.~Wang et al. Self-Consistency Improves Chain of Thought Reasoning in Language Models. \emph{ICLR}, 2023.
+\item J.~Liu et al. What Makes Good In-Context Examples for GPT-3? \emph{DeeLIO Workshop}, 2022.
+\item L.~Zheng et al. Judging LLM-as-a-Judge with MT-Bench and Chatbot Arena. \emph{NeurIPS Datasets and Benchmarks}, 2023.
+\item Qwen Team. Qwen3 Technical Report. \emph{arXiv:2505.09388}, 2025.
+\end{enumerate}
+
 \appendix
 \section{最终选定的提示词}
-\todo{列出最终选定的完整提示词，与提交的solution.py一致。}
+最终方案为方法4（\texttt{STEP = 4}），它每次调用的单次判断使用方法3的提示词。以下内容与提交的\texttt{solution.py}中\texttt{PROMPTS}区块一致，为便于排版对长行做了手动换行，花括号内为动态字段。
+
+\paragraph{论文格式（所有方法共用）。}
 \begin{Verbatim}[fontsize=\small,frame=single]
-粘贴最终采用的system与user模板。
-动态字段使用清晰的变量名标明。
-长行可手动换行。
+PAPER_TEMPLATE:
+Paper {label}
+Title: {title}
+Date: {date}
+Abstract: {abstract}
+
+PAIR_TEMPLATE:
+{paper_a}
+
+{paper_b}
 \end{Verbatim}
-\todo{若采用动态选例或多轮调用，简述材料选择、消息构造和答案汇总方式。}
+
+\paragraph{system提示（COT\_SYSTEM）。}
+\begin{Verbatim}[fontsize=\small,frame=single]
+You are an expert in scientometrics. Your job is to predict which of two
+papers has more citations. Citation counts are driven mainly by: (1) the
+size and activity of the research community of the topic; (2) how broadly
+useful the contribution is (new general methods, datasets, benchmarks,
+software tools, surveys and foundational theory are cited far more than
+narrow case studies or incremental variants); (3) the strength and novelty
+of the claims; (4) the time a paper has had to accumulate citations (an
+earlier paper has an advantage, but a gap of a few months matters much less
+than topic and contribution type).
+\end{Verbatim}
+
+\paragraph{user提示（COT\_USER）及日期说明。}
+\begin{Verbatim}[fontsize=\small,frame=single]
+Predict which paper had received MORE citations at the time the data was
+recorded.
+
+{pair}
+
+Extra context: {date_note}
+
+Compare the papers step by step:
+1. Field and community size of each paper (is it a hot, large area or a
+   small niche?).
+2. Type of contribution (method / dataset / benchmark / tool / survey /
+   theory / application / case study) and how widely reusable it is.
+3. Significance and generality of the results as claimed in the abstract.
+4. Effect of the publication date gap.
+Then weigh these factors and decide.
+
+The LAST line of your reply must be exactly "Answer: A" or "Answer: B".
+
+date_note（由代码计算）：
+  Paper {older} was published {gap} days earlier than Paper {newer}.
+  或（同一天）：Both papers were published on the same day.
+
+few-shot示例的assistant轮（FEWSHOT_ANSWER）：
+Answer: {answer}
+\end{Verbatim}
+
+\paragraph{消息构造与答案汇总。}
+\begin{enumerate}
+\item \textbf{选例}：对当前题和示例池中的每条示例，取两篇论文的标题与摘要，小写化、去掉停用词和长度不超过2的词，计算词集合的Jaccard相似度；分别取答案为A和B的最相似的2条，共4条，按相似度升序排列。
+\item \textbf{消息}：\texttt{[system: COT\_SYSTEM]}，然后对每条示例依次加入\texttt{user: COT\_USER(示例)}和\texttt{assistant: Answer: X}，最后是\texttt{user: COT\_USER(当前题)}。总长度超过19000字节时，从最不相似的示例开始逐条删除。
+\item \textbf{投票}：每题调用4次，第2、4次交换\texttt{paper\_a}与\texttt{paper\_b}（示例保持不变，日期说明随之重算），并把答案翻转回原顺序；平票时追加1次原顺序调用，仍平票取第一个有效答案；全部失败时返回A。
+\item \textbf{提取}：在最终回答中依次尝试\texttt{Answer: X}、单独一行的\texttt{X}、加粗的\texttt{**X**}三种模式，取最后一次匹配；若都没有匹配，再在思考文本的末尾600个字符中提取。
+\end{enumerate}
 \end{document}

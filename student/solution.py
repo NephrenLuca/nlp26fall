@@ -1,10 +1,11 @@
 """在 predict 中实现你的提示词与模型调用流程。
 
-实验分4步，由下方常量 STEP 选择启用哪一步：
+实验分5步，由下方常量 STEP 选择启用哪一步：
   步骤1 直接指令（zero-shot）
   步骤2 few-shot（检索相似示例）
-  步骤3 分步比较（结构化CoT+日期差）
-  步骤4 多次采样投票 + A/B交换去偏（最终方案，默认启用）
+  步骤3 分步比较（结构化CoT，不再提供日期差）
+  步骤4 混合投票（分步比较×3 + 单独打分×2）+ A/B交换去偏（最终方案，默认启用）
+  步骤5 单独打分（先给每篇论文独立打1-10分，再比较）
 一键按顺序运行全部步骤：python run_all.py
 提示词只在 prompts.py 中修改；下方 PROMPTS 区块由 sync_prompts.py 自动生成（run.py 会自动同步）。
 """
@@ -53,37 +54,51 @@ FEWSHOT_SYSTEM = """You are an expert in scientometrics who predicts how often r
 FEWSHOT_ANSWER = """Answer: {answer}"""
 
 # ---------------------------------------------------------------------------
-# 【步骤3】分步比较（结构化思维链 + 领域判据 + 代码预先计算的日期差）
+# 【步骤3】分步比较（结构化思维链 + 领域判据；日期差不作为判据）
 # ---------------------------------------------------------------------------
-COT_SYSTEM = """You are an expert in scientometrics. Your job is to predict which of two papers has more citations. Citation counts are driven mainly by: (1) the size and activity of the research community of the topic; (2) how broadly useful the contribution is (new general methods, datasets, benchmarks, software tools, surveys and foundational theory are cited far more than narrow case studies or incremental variants); (3) the strength and novelty of the claims; (4) the time a paper has had to accumulate citations (an earlier paper has an advantage, but a gap of a few months matters much less than topic and contribution type)."""
+COT_SYSTEM = """You are an expert in scientometrics. Your job is to predict which of two papers has more citations. Citation counts are driven mainly by: (1) the size and activity of the research community of the topic; (2) how broadly useful the contribution is (new general methods, datasets, benchmarks, software tools, surveys and foundational theory are cited far more than narrow case studies or incremental variants); (3) the strength and novelty of the claims. The two papers were published close in time (usually within a year), so the date gap has almost no effect: do not favor a paper just because it is older."""
 
 COT_USER = """Predict which paper had received MORE citations at the time the data was recorded.
 
 {pair}
 
-Extra context: {date_note}
-
 Compare the papers step by step:
 1. Field and community size of each paper (is it a hot, large area or a small niche?).
 2. Type of contribution (method / dataset / benchmark / tool / survey / theory / application / case study) and how widely reusable it is.
 3. Significance and generality of the results as claimed in the abstract.
-4. Effect of the publication date gap.
 Then weigh these factors and decide.
 
 The LAST line of your reply must be exactly "Answer: A" or "Answer: B"."""
 
-DATE_NOTE_TEMPLATE = """Paper {older} was published {gap} days earlier than Paper {newer}."""
+# ---------------------------------------------------------------------------
+# 【步骤5】单独打分：先给每篇论文的引用潜力独立打1-10分，再比较分数
+# ---------------------------------------------------------------------------
+SCORE_SYSTEM = """You are an expert in scientometrics who estimates the citation potential of research papers. Judge each paper on its own merits: the size and activity of its research field, the type and reusability of its contribution, and the significance of its claims."""
 
-SAME_DAY_NOTE = """Both papers were published on the same day."""
+SCORE_USER = """Below are two research papers. Rate the citation potential of EACH paper independently, as if you had not seen the other one, on a 1-10 scale (1 = rarely cited niche work, 10 = highly influential work in a large, active field).
+
+{pair}
+
+For each paper, briefly consider:
+- how large and active its research field is;
+- what kind of contribution it makes (method / dataset / benchmark / tool / survey / theory / application / case study) and how widely reusable it is;
+- how significant and general its claims are.
+The papers were published close in time, so ignore the date gap. Rate Paper A first, then Paper B, and avoid giving both papers the same score.
+
+End your reply with exactly these three lines:
+Score A: <1-10>
+Score B: <1-10>
+Answer: <A or B, the paper with the higher score>"""
 
 # ---------------------------------------------------------------------------
-# 【步骤4】多次采样投票 + 交换A/B位置去偏
-# 不需要新提示词：复用步骤3（或效果最好那一步）的提示词，见 solution.py 的 method_vote。
+# 【步骤4】混合投票 + 交换A/B位置去偏（最终方案）
+# 不需要新提示词：分步比较×3 + 单独打分×2，见 solution.py 的 VOTE_PLAN 与 method_vote。
 # ---------------------------------------------------------------------------
 # ===== PROMPTS END =====
 
-STEP = 4                 # 启用的实验步骤：1 直接指令 / 2 few-shot / 3 分步比较 / 4 投票；run_all.py 会逐步改写此行
+STEP = 4                 # 启用的实验步骤：1 直接指令 / 2 few-shot / 3 分步比较 / 4 混合投票 / 5 单独打分；run_all.py 会逐步改写此行
 MAX_CALLS = 5            # 每题平均调用预算（5×n 全局共享，超出会导致其他题目失败）
+VOTE_RETRIES = 1         # 投票中某票调用失败时，每题最多补调的次数（由提前结束省下的调用覆盖）
 MAX_REQUEST_BYTES = 19000  # 框架限制单次请求 20,000 字节，留余量
 DEFAULT_ANSWER = "A"     # 所有调用均失败或无法提取答案时的兜底
 
@@ -135,17 +150,30 @@ def extract_answer(text):
     return None
 
 
-def ask(llm, messages, tries):
+SCORE_PATTERN = r"(?i:score)\s*(?:(?i:paper)\s*)?([AB])\s*\**\s*[:：=]\s*\**\s*(\d+(?:\.\d+)?)"
+
+
+def extract_score(text):
+    """从“Score A: x / Score B: y”中比较分数；缺失或同分时退回“Answer: X”。"""
+    if not text:
+        return None
+    scores = dict(re.findall(SCORE_PATTERN, text))
+    if "A" in scores and "B" in scores and float(scores["A"]) != float(scores["B"]):
+        return "A" if float(scores["A"]) > float(scores["B"]) else "B"
+    return extract_answer(text)
+
+
+def ask(llm, messages, tries, extract=extract_answer):
     """调用模型并提取答案；失败或无法提取时重试，最多 tries 次（每次都计入预算）。"""
     for _ in range(tries):
         try:
             response = llm.chat(messages)
         except RuntimeError:
             continue
-        answer = extract_answer(response["content"])
+        answer = extract(response["content"])
         if answer is None:
             # 回答被截断时，答案可能只出现在思考末尾
-            answer = extract_answer(response["reasoning"][-600:])
+            answer = extract(response["reasoning"][-600:])
         if answer is not None:
             return answer
     return None
@@ -213,33 +241,12 @@ def method_fewshot(pair, examples, llm, tries=2, k=4):
 
 
 # ---------------------------------------------------------------------------
-# 【步骤3】分步比较：结构化判据 + 代码预先算好的日期差（上下文工程），并沿用步骤2的 few-shot 示例
+# 【步骤3】分步比较：结构化判据（明确告诉模型日期差基本无影响），并沿用步骤2的 few-shot 示例
 # 依赖步骤2的 select_examples / fewshot_messages，步骤2的代码须保持取消注释状态。
 # 想单独测“不带示例的CoT”，把 method_cot 的 k 设为 0 即可。
 # ---------------------------------------------------------------------------
-def days_from_civil(y, m, d):
-    y -= m <= 2
-    era = (y if y >= 0 else y - 399) // 400
-    yoe = y - era * 400
-    doy = (153 * (m + (-3 if m > 2 else 9)) + 2) // 5 + d - 1
-    doe = yoe * 365 + yoe // 4 - yoe // 100 + doy
-    return era * 146097 + doe - 719468
-
-
-def parse_days(date):
-    parts = [int(x) for x in re.findall(r"\d+", date)] + [1, 1]
-    return days_from_civil(parts[0], parts[1], parts[2])
-
-
-def date_note(pair):
-    gap = parse_days(pair["paper_b"]["date"]) - parse_days(pair["paper_a"]["date"])
-    if gap == 0:
-        return SAME_DAY_NOTE
-    return DATE_NOTE_TEMPLATE.format(older="A" if gap > 0 else "B", newer="B" if gap > 0 else "A", gap=abs(gap))
-
-
 def cot_fill(pair):
-    return {"pair": format_pair(pair), "date_note": date_note(pair)}
+    return {"pair": format_pair(pair)}
 
 
 def method_cot(pair, examples, llm, tries=2, k=4):
@@ -249,27 +256,50 @@ def method_cot(pair, examples, llm, tries=2, k=4):
 
 
 # ---------------------------------------------------------------------------
-# 【步骤4】多次采样投票（self-consistency）+ 交换 A/B 位置抵消位置偏置
-# single 传入前几步中效果最好的方法（默认 method_cot）。共 votes 次投票，平票时再追加一次，总调用 ≤ MAX_CALLS。
+# 【步骤5】单独打分：每篇论文独立打1-10分后比较（不带示例，与分步比较形成互补）
 # ---------------------------------------------------------------------------
-def method_vote(pair, examples, llm, single, votes=4):
+def method_score(pair, examples, llm, tries=2):
+    messages = [
+        {"role": "system", "content": SCORE_SYSTEM},
+        {"role": "user", "content": SCORE_USER.format(pair=format_pair(pair))},
+    ]
+    return ask(llm, messages, tries, extract_score)
+
+
+# ---------------------------------------------------------------------------
+# 【步骤4】混合投票（self-consistency）+ 交换 A/B 位置抵消位置偏置
+# 固定 5 票（奇数，不会平票）：分步比较×3 + 单独打分×2，每种方法都覆盖原序和交换顺序。
+# 某一方先达到 3 票即提前结束（剩余票数无法改变结果），省下的调用用于补调失败的票。
+# ---------------------------------------------------------------------------
+def method_vote(pair, examples, llm, plan):
     counter = Counter()
     first = None
-    for i in range(votes):
-        swapped = i % 2 == 1
-        answer = single(swap_pair(pair) if swapped else pair, examples, llm, tries=1)
-        if swapped:
-            answer = flip(answer)
+    majority = len(plan) // 2 + 1
+    retries = VOTE_RETRIES
+    for single, swapped in plan:
+        while True:
+            answer = single(swap_pair(pair) if swapped else pair, examples, llm, tries=1)
+            if answer or retries == 0:
+                break
+            retries -= 1
         if answer:
+            answer = flip(answer) if swapped else answer
             counter[answer] += 1
             first = first or answer
-    if counter["A"] == counter["B"] and votes < MAX_CALLS:
-        answer = single(pair, examples, llm, tries=1)
-        if answer:
-            counter[answer] += 1
+        if max(counter.values(), default=0) >= majority:
+            break
     if counter["A"] == counter["B"]:
         return first
     return counter.most_common(1)[0][0]
+
+
+VOTE_PLAN = [
+    (method_cot, False),
+    (method_score, True),
+    (method_cot, True),
+    (method_score, False),
+    (method_cot, False),
+]
 
 
 def predict(pair, examples, llm):
@@ -285,7 +315,9 @@ def predict(pair, examples, llm):
         answer = method_fewshot(pair, examples, llm)
     elif STEP == 3:
         answer = method_cot(pair, examples, llm)
+    elif STEP == 5:
+        answer = method_score(pair, examples, llm)
     else:
-        answer = method_vote(pair, examples, llm, method_cot)
+        answer = method_vote(pair, examples, llm, VOTE_PLAN)
 
     return answer if answer in ("A", "B") else DEFAULT_ANSWER

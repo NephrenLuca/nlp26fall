@@ -1,10 +1,10 @@
-"""一键按顺序运行全部实验步骤（1 直接指令 → 2 few-shot → 3 分步比较 → 4 投票），
+"""一键按顺序运行全部实验步骤（1 直接指令 → 2 few-shot → 3 分步比较 → 5 单独打分 → 4 混合投票），
 并把每一步的完整控制台输出与评测指标追加记录到 llm_output.md（不存在则新建）。
 
 用法（在模型服务已启动、并已激活 .lab-runtime 环境的终端中）：
-    python run_all.py                 # 先跑3题冒烟测试，再依次跑步骤1-4的完整公开集
+    python run_all.py                 # 先跑3题冒烟测试，再依次跑步骤1、2、3、5、4的完整公开集
     python run_all.py --no-smoke      # 跳过冒烟测试
-    python run_all.py --steps 3 4     # 只跑指定步骤
+    python run_all.py --steps 3 5 4   # 只跑指定步骤
     python run_all.py --limit 10      # 每一步只跑前10题（小批调试）
 结束后 solution.py 中的 STEP 会恢复为运行前的值（默认 4，即最终提交方案）。
 """
@@ -25,8 +25,9 @@ STEP_LINE = re.compile(r'^STEP = (\d+)', re.M)
 STEP_NAMES = {
     1: '步骤1 直接指令（zero-shot）',
     2: '步骤2 few-shot（检索相似示例）',
-    3: '步骤3 分步比较（结构化CoT + 日期差）',
-    4: '步骤4 多次采样投票 + A/B交换去偏',
+    3: '步骤3 分步比较（结构化CoT，无日期差）',
+    4: '步骤4 混合投票（分步比较×3 + 单独打分×2）+ A/B交换去偏',
+    5: '步骤5 单独打分（独立打1-10分后比较）',
 }
 
 
@@ -119,8 +120,8 @@ def record_run(title, args, step):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument('--steps', type=int, nargs='+', default=[1, 2, 3, 4], choices=[1, 2, 3, 4],
-                   help='要运行的步骤，按给定顺序执行；默认 1 2 3 4')
+    p.add_argument('--steps', type=int, nargs='+', default=[1, 2, 3, 5, 4], choices=sorted(STEP_NAMES),
+                   help='要运行的步骤，按给定顺序执行；默认 1 2 3 5 4')
     p.add_argument('--limit', type=int, help='每一步只跑前几题；不填则跑完整公开集')
     p.add_argument('--data', help='测试集文件；默认公开集')
     p.add_argument('--no-smoke', action='store_true', help='跳过开始时的3题冒烟测试')
